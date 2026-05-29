@@ -60,7 +60,12 @@ final lifetimeStatsProvider = StreamProvider<LifetimeStats>((ref) {
   final db = ref.watch(databaseProvider);
 
   final stepsSum = db.stepsTable.steps.sum();
-  final stepsDays = db.stepsTable.id.count();
+  // Only count days that actually have steps — `refreshMonth` writes a row
+  // for every day in the month (with 0 for empty days) so the chart can
+  // render empty bars, but those 0-step rows shouldn't bump "DAYS TRACKED".
+  final stepsDays = db.stepsTable.id.count(
+    filter: db.stepsTable.steps.isBiggerThanValue(0),
+  );
   final stepsQuery = db.selectOnly(db.stepsTable)..addColumns([stepsSum, stepsDays]);
 
   final minutesSum = db.appUsageTable.minutesUsed.sum();

@@ -6,7 +6,7 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.StepsRecord
-import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
@@ -107,55 +107,68 @@ class HealthChannel(
 
     private fun client(): HealthConnectClient = HealthConnectClient.getOrCreate(activity)
 
-    /// Reads all StepsRecords in [startMs..endMs] and aggregates per local day.
-    /// Paginates through the full result set — a single page is capped at 1000
-    /// records, and step providers (Samsung Health etc.) emit many records per
-    /// day, so without paging we'd cut off the chart partway through the month.
+    /// Step total per local day in [zoneId], one [client.aggregate] call per day.
+    ///
+    /// We deliberately do NOT sum raw StepsRecords from `readRecords` here:
+    /// Health Connect is a shared store, and on most phones two providers
+    /// (e.g. Samsung Health AND the Google/Health-Connect platform) both log
+    /// the same physical steps. Summing every record double-counts them — the
+    /// tell-tale symptom is every day's total coming out exactly 2× (always an
+    /// even number). The `aggregate` API resolves overlapping data from
+    /// different origins with Health Connect's own priority/de-dup rules, so
+    /// each physical step is counted once.
+    ///
+    /// `aggregate` doesn't slice by calendar day in an arbitrary zone, so we
+    /// walk day-by-day in [zoneId] and aggregate each day's window separately.
+    /// Each window is clipped to [startMs, endMs] so a partial first/last day
+    /// (e.g. "today" ending at `now`) isn't over-counted. `dateMs` is midnight
+    /// of that day in [zoneId] — the same key the Dart side writes under.
     private suspend fun fetchStepsPerDay(
         startMs: Long,
         endMs: Long,
         zoneId: String?,
     ): List<Map<String, Long>> {
         val client = client()
-        val timeRange = TimeRangeFilter.between(
-            Instant.ofEpochMilli(startMs),
-            Instant.ofEpochMilli(endMs),
-        )
         val zone = try {
             if (zoneId.isNullOrEmpty()) ZoneId.systemDefault() else ZoneId.of(zoneId)
         } catch (_: Throwable) {
             ZoneId.systemDefault()
         }
-        val perDayMillis = mutableMapOf<Long, Long>()
 
-        var pageToken: String? = null
-        do {
-            val request = if (pageToken == null) {
-                ReadRecordsRequest(
-                    recordType = StepsRecord::class,
-                    timeRangeFilter = timeRange,
-                    pageSize = 1000,
-                )
-            } else {
-                ReadRecordsRequest(
-                    recordType = StepsRecord::class,
-                    timeRangeFilter = timeRange,
-                    pageSize = 1000,
-                    pageToken = pageToken,
-                )
-            }
-            val response = client.readRecords(request)
-            for (record in response.records) {
-                val day = record.startTime.atZone(zone).toLocalDate()
-                val dayStart = day.atStartOfDay(zone).toInstant().toEpochMilli()
-                perDayMillis.merge(dayStart, record.count) { a, b -> a + b }
-            }
-            pageToken = response.pageToken
-        } while (pageToken != null)
+        val rangeStart = Instant.ofEpochMilli(startMs)
+        val rangeEnd = Instant.ofEpochMilli(endMs)
 
-        return perDayMillis.entries.map { (dayMs, steps) ->
-            mapOf("dateMs" to dayMs, "steps" to steps)
+        val out = mutableListOf<Map<String, Long>>()
+        var day = rangeStart.atZone(zone).toLocalDate()
+        val lastDay = rangeEnd.atZone(zone).toLocalDate()
+
+        while (!day.isAfter(lastDay)) {
+            val dayStartInstant = day.atStartOfDay(zone).toInstant()
+            val dayEndInstant = day.plusDays(1).atStartOfDay(zone).toInstant()
+
+            val clipStart = if (dayStartInstant.isBefore(rangeStart)) rangeStart else dayStartInstant
+            val clipEnd = if (dayEndInstant.isAfter(rangeEnd)) rangeEnd else dayEndInstant
+
+            if (clipStart.isBefore(clipEnd)) {
+                val response = client.aggregate(
+                    AggregateRequest(
+                        metrics = setOf(StepsRecord.COUNT_TOTAL),
+                        timeRangeFilter = TimeRangeFilter.between(clipStart, clipEnd),
+                    )
+                )
+                val count = response[StepsRecord.COUNT_TOTAL]
+                if (count != null && count > 0) {
+                    out.add(
+                        mapOf(
+                            "dateMs" to dayStartInstant.toEpochMilli(),
+                            "steps" to count,
+                        )
+                    )
+                }
+            }
+            day = day.plusDays(1)
         }
+        return out
     }
 
     companion object {

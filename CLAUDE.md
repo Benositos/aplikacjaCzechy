@@ -1,8 +1,50 @@
 # CLAUDE.md
 
-You're helping port **Calma** (Android-complete) to **iOS**. Read this before touching code — it captures architectural decisions and pitfalls that aren't obvious from the source.
+> # 🛑 READ THIS FILE FULLY BEFORE DOING ANYTHING
+>
+> You are Claude Code, helping a contributor port **Calma** (Android-complete) to **iOS**. This document is the canonical onboarding doc — architecture, channel contracts, known caveats, what to do, what NOT to do.
+>
+> **Do not start any work until you've read this entire file once.** If you skip it and start guessing from source code, you'll repeat mistakes that were already paid for. Specifically: every "obvious" library choice on this project was the wrong one (the `health` package, `usage_stats`, `app_usage`, etc.) — the comments in this file explain why.
+>
+> If you got here by following the README's first-prompt instructions, you also still need to do the **First-run setup** section below before touching any code.
 
-This is the **current** version of the project (Calma v0.2.0 with timezone selection). An earlier snapshot lives in a separate repo as `beta1.0` — that snapshot exists only as historical backup and should be ignored. Port from THIS code, not from beta1.0.
+---
+
+You're helping port **Calma** (Android-complete) to **iOS**. This captures architectural decisions and pitfalls that aren't obvious from the source.
+
+This is the **current** version of the project (Calma v0.2.0 with timezone selection). An earlier snapshot lives in a separate branch as `beta1.0` — that snapshot exists only as historical backup and should be ignored. Port from THIS code, not from beta1.0.
+
+## First-run setup (do this once, right after clone)
+
+This section is for **you, Claude Code**, to walk the contributor through. The repo just got cloned into `calma/`. Run these in order; ask the contributor only if something errors out.
+
+```bash
+# 1. Pull all Dart deps. Pinned versions in pubspec.yaml — do NOT bump.
+flutter pub get
+
+# 2. Generate Drift's *.g.dart files (DB code-gen). They're gitignored
+#    so you regenerate per-machine. Takes 30-60s the first time.
+dart run build_runner build --delete-conflicting-outputs
+
+# 3. Install iOS pods. Required before any `flutter run` on iOS.
+cd ios && pod install && cd ..
+
+# 4. Smoke test — should boot to onboarding. Steps and Focus tabs will
+#    log channel errors / show empty data; that's expected, those channels
+#    aren't implemented on iOS yet (that's your job).
+flutter run -d <iphone-id>     # use a real iPhone for HealthKit testing
+# or:
+flutter run -d "iPhone 15 Pro"  # simulator works for UI smoke testing
+```
+
+Common issues and the right response:
+
+- **`flutter doctor` shows Android problems**: ignore. The contributor doesn't need an Android toolchain to port iOS.
+- **`pod install` fails on M1/M2 Macs**: `sudo arch -x86_64 gem install ffi && arch -x86_64 pod install`.
+- **Xcode complains about signing**: contributor signs in with their Apple ID in Xcode → Settings → Accounts. Then in `Runner.xcodeproj` → Signing & Capabilities → Team = their personal team. Free tier is enough for sideload + TestFlight.
+- **`build_runner` errors about conflicting outputs**: the `--delete-conflicting-outputs` flag handles this; if you forgot it, run again with the flag.
+
+Once smoke test passes (app boots, you see onboarding), proceed to **Implementation order** lower in this file.
 
 ## What this is
 

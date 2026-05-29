@@ -1,0 +1,82 @@
+name: calma
+description: "Track your steps and screen time. Calm, dense, deliberate."
+publish_to: 'none'
+version: 0.2.0+1
+
+environment:
+  sdk: ^3.12.0
+
+# All versions pinned — no caret ranges. We learned the hard way that
+# bleeding-edge transitive updates can break the build week-over-week.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: 2.6.1
+
+  # Navigation
+  go_router: 14.6.1
+
+  # Local database (SQLite under the hood)
+  drift: 2.21.0
+  sqlite3: 2.9.4
+  sqlite3_flutter_libs: 0.5.42
+  path: 1.9.1
+  path_provider: 2.1.5
+
+  # Android permission helpers (notifications, activity recognition, gallery)
+  permission_handler: 11.4.0
+
+  # Local-only notifications (no FCM, no backend)
+  flutter_local_notifications: 17.2.4
+  timezone: 0.9.4
+
+  # Charts
+  fl_chart: 0.69.2
+
+  # Typography
+  google_fonts: 6.3.3
+
+  # Utilities
+  intl: 0.19.0
+  image_picker: 1.1.2
+
+  # GPS mode for timezone detection. Coordinates → timezone mapping is
+  # hand-rolled in location_service.dart (no reliable Dart package exists
+  # for offline coord→IANA lookup; covering major regions is enough here).
+  geolocator: 14.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+  drift_dev: 2.21.2
+  build_runner: 2.4.13
+  flutter_launcher_icons: 0.14.4
+  flutter_native_splash: 2.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo/logo.png
+    - assets/logo/wordmark.png
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/logo/logo.png"
+  remove_alpha_ios: true
+  background_color_ios: "#FFFFFF"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/logo/logo.png"
+  min_sdk_android: 33
+
+# Native splash — cream background works on both themes since logo is black.
+# Brief flash before app boots; consistent branding regardless of system theme.
+flutter_native_splash:
+  color: "#FAF8F2"
+  image: "assets/logo/logo.png"
+  android_12:
+    color: "#FAF8F2"
+    image: "assets/logo/logo.png"
